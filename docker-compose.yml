@@ -13,6 +13,11 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    environment:
+      - PORT=3000
+      - BASE_PATH=/
+      - API_TARGET=${API_TARGET}
+    command:  npm run dev
   db:
     image: postgres
     environment:

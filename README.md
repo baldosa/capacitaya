@@ -100,6 +100,70 @@ PORT=3000 BASE_PATH=/ npm run dev
 
 ---
 
+## Integración frontend ↔ API
+
+El cliente tipado vive en `frontend/src/lib/api.ts` y expone cuatro namespaces que mapean directamente a los endpoints del backend.
+
+### Namespaces disponibles
+
+```ts
+import { users, learningPaths, attempts, jobDescriptions } from "@/lib/api";
+```
+
+| Namespace | Funciones |
+|---|---|
+| `users` | `list()`, `get(id)`, `create(data)` |
+| `learningPaths` | `list()`, `get(id)`, `getByStudent(email)` |
+| `attempts` | `create(data)`, `get(id)`, `getByStudent(email)` |
+| `jobDescriptions` | `list()`, `get(id)`, `create(data)` |
+
+### Cómo usar con React Query
+
+Todas las funciones devuelven una `Promise` y están pensadas para usarse con `useQuery` (lecturas) o `useMutation` (escrituras):
+
+```tsx
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { learningPaths, attempts } from "@/lib/api";
+
+// Lectura: learning path de un estudiante
+const { data, isLoading, error } = useQuery({
+  queryKey: ["learning-paths", email],
+  queryFn: () => learningPaths.getByStudent(email),
+});
+
+// Escritura: registrar un intento de ejercicio
+const queryClient = useQueryClient();
+const mutation = useMutation({
+  mutationFn: attempts.create,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["attempts", email] });
+  },
+});
+
+mutation.mutate({
+  student_email: "lucia@ejemplo.com",
+  learning_path_id: 1,
+  module_index: 0,
+  unit_index: 0,
+  exercise_index: 0,
+  answer: "La respuesta del alumno",
+});
+```
+
+### Proxy en desarrollo
+
+En dev (`docker compose up`), el frontend corre en `:3000` y el backend en `:8000`. Vite intercepta automáticamente cualquier request a `/api/*` y la forwarda al backend — no se necesita configurar CORS ni URLs absolutas. En producción (Render), FastAPI sirve el frontend como estático, por lo que `/api/*` llega directamente al mismo servidor.
+
+### Tipos exportados
+
+El archivo `api.ts` exporta todos los tipos necesarios:
+
+```ts
+import type { User, LearningPath, Module, Unit, Exercise, Attempt, JobDescription } from "@/lib/api";
+```
+
+---
+
 ## Deploy en Render
 
 El deploy es automático desde la branch `main` vía webhook de GitHub.
