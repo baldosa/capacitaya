@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title=settings.app_name, debug=settings.app_debug, lifespan=lifespan)
 
 
-@app.get("/health", tags=["health"])
+@app.get("/api/health", tags=["health"])
 def health_check() -> dict[str, str]:
     return {"status": "ok", "environment": settings.app_env}
 

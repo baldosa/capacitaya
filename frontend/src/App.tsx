@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+import { DemoApi } from "@/pages/DemoApi";
 import { Dashboard } from "@/pages/Dashboard";
 import { PlanCapacitacion } from "@/pages/PlanCapacitacion";
 import { ModuloIA } from "@/pages/ModuloIA";
@@ -25,6 +26,7 @@ function Router() {
       <Route path="/canal-tutor" component={CanalTutor} />
       <Route path="/panel-tutor" component={PanelTutor} />
       <Route path="/detalle-candidato" component={DetalleCandidato} />
+      <Route path="/demo-api" component={DemoApi} />
       <Route component={NotFound} />
     </Switch>
   );
