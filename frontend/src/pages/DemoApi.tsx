@@ -9,10 +9,9 @@ interface Endpoint {
 }
 
 const ENDPOINTS: Endpoint[] = [
-  { label: "GET /health", path: "/health" },
+  { label: "GET /health", path: "/api/health" },
   { label: "GET /users", path: "/api/users" },
   { label: "GET /learning-paths", path: "/api/learning-paths" },
-  { label: "GET /job-descriptions", path: "/api/job-descriptions" },
   {
     label: "GET /students/{email}/learning-paths",
     path: "/api/students/{email}/learning-paths",

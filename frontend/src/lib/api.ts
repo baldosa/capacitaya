@@ -102,24 +102,6 @@ export interface Attempt {
   created_at: string;
 }
 
-// ─── Job Descriptions ────────────────────────────────────────────────────────
-
-export type SkillLevel = "beginner" | "intermediate" | "advanced";
-
-export interface JobDescription {
-  id: number;
-  title: string;
-  description: string;
-  skills: Record<string, SkillLevel>;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface JobDescriptionCreate {
-  title: string;
-  description: string;
-  skills: Record<string, SkillLevel>;
-}
 
 // ─── Fetch helper ────────────────────────────────────────────────────────────
 
@@ -171,19 +153,4 @@ export const attempts = {
       `/students/${encodeURIComponent(email)}/attempts${qs ? `?${qs}` : ""}`,
     );
   },
-};
-
-// ─── Job Descriptions ────────────────────────────────────────────────────────
-
-export const jobDescriptions = {
-  list: (params?: { offset?: number; limit?: number }) => {
-    const qs = new URLSearchParams(params as Record<string, string>).toString();
-    return request<JobDescription[]>(`/job-descriptions${qs ? `?${qs}` : ""}`);
-  },
-  get: (id: number) => request<JobDescription>(`/job-descriptions/${id}`),
-  create: (data: JobDescriptionCreate) =>
-    request<JobDescription>("/job-descriptions", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
 };
