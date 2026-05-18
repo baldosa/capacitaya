@@ -19,7 +19,7 @@ router = APIRouter(prefix="/gap-analyses", tags=["gap-analyses"])
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
-    response_model=GapAnalysisWithPlanResponse,
+    response_model=GapAnalysisResponse,
 )
 def create_gap_analysis(
     student_email: str = Form(...),
@@ -27,17 +27,13 @@ def create_gap_analysis(
     student_doc: UploadFile = File(...),
     position_doc: UploadFile = File(...),
     db: Session = Depends(get_db),
-    plan_generator: PlanGenerator = Depends(get_plan_generator),
-    lp_repository: LearningPathRepository = Depends(get_learning_path_repository),
-) -> GapAnalysisWithPlanResponse:
+) -> GapAnalysisResponse:
     return service.create_gap_analysis(
         db=db,
         student_email=student_email,
         company_email=company_email,
         student_doc=student_doc,
         position_doc=position_doc,
-        plan_generator=plan_generator,
-        lp_repository=lp_repository,
     )
 
 
@@ -61,3 +57,22 @@ def list_by_student(
     db: Session = Depends(get_db),
 ) -> list[GapAnalysisResponse]:
     return service.list_by_student(db, email, offset=offset, limit=limit)
+
+
+@student_gap_analyses_router.post(
+    "/{email}/generate-learning-path",
+    status_code=status.HTTP_201_CREATED,
+    response_model=GapAnalysisWithPlanResponse,
+)
+def generate_learning_path_for_student(
+    email: str,
+    db: Session = Depends(get_db),
+    plan_generator: PlanGenerator = Depends(get_plan_generator),
+    lp_repository: LearningPathRepository = Depends(get_learning_path_repository),
+) -> GapAnalysisWithPlanResponse:
+    return service.generate_learning_path_for_student(
+        db=db,
+        student_email=email,
+        plan_generator=plan_generator,
+        lp_repository=lp_repository,
+    )

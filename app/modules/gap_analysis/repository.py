@@ -26,3 +26,16 @@ def find_by_student(
         .limit(limit)
     )
     return list(db.scalars(statement).all())
+
+
+def find_latest_without_plan_by_student(
+    db: Session, student_email: str
+) -> GapAnalysis | None:
+    statement = (
+        select(GapAnalysis)
+        .where(func.lower(GapAnalysis.student_email) == student_email.lower())
+        .where(GapAnalysis.learning_path_id.is_(None))
+        .order_by(GapAnalysis.id.desc())
+        .limit(1)
+    )
+    return db.scalars(statement).first()

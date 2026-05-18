@@ -1,4 +1,3 @@
-import json
 import logging
 
 from fastapi import HTTPException, UploadFile, status
@@ -124,9 +123,9 @@ def create_gap_analysis(
     company_email: str,
     student_doc: UploadFile,
     position_doc: UploadFile,
-    plan_generator: PlanGenerator,
-    lp_repository: LearningPathRepository,
-) -> GapAnalysisWithPlanResponse:
+) -> GapAnalysisResponse:
+    """Step 1: extract GapReport from docs and persist it. Does NOT trigger
+    learning_path generation (use generate_learning_path_for_student for that)."""
     inputs = _validate_inputs(student_email, company_email)
     student_text = _extract_or_fail(student_doc, "student_doc")
     position_text = _extract_or_fail(position_doc, "position_doc")
@@ -135,10 +134,6 @@ def create_gap_analysis(
         student_text=student_text,
         position_text=position_text,
         student_email=inputs.student_email,
-    )
-
-    learning_path = lp_service.create_learning_path(
-        plan_generator, lp_repository, gap_report, db
     )
 
     stored = repository.save(
@@ -151,10 +146,40 @@ def create_gap_analysis(
             gap_report_json=gap_report.model_dump_json(),
             student_doc_text=student_text,
             position_doc_text=position_text,
-            learning_path_id=learning_path.id,
+            learning_path_id=None,
             generator_used="groq",
         ),
     )
+
+    return _to_response(stored, gap_report)
+
+
+def generate_learning_path_for_student(
+    db: Session,
+    student_email: str,
+    plan_generator: PlanGenerator,
+    lp_repository: LearningPathRepository,
+) -> GapAnalysisWithPlanResponse:
+    """Step 2: take the latest pending gap_analysis for a student and
+    trigger learning_paths.create_learning_path with its stored GapReport."""
+    stored = repository.find_latest_without_plan_by_student(db, student_email)
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No hay gap_analysis pendiente para '{student_email}'. "
+                "Suba primero los documentos en POST /api/gap-analyses."
+            ),
+        )
+
+    gap_report = GapReport.model_validate_json(stored.gap_report_json)
+    learning_path = lp_service.create_learning_path(
+        plan_generator, lp_repository, gap_report, db
+    )
+
+    stored.learning_path_id = learning_path.id
+    db.commit()
+    db.refresh(stored)
 
     return GapAnalysisWithPlanResponse(
         gap_analysis=_to_response(stored, gap_report),
