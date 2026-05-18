@@ -11,6 +11,10 @@ from app.modules.attempts.router import (
     router as attempts_router,
     student_attempts_router,
 )
+from app.modules.gap_analysis.router import (
+    router as gap_analysis_router,
+    student_gap_analyses_router,
+)
 from app.modules.learning_paths.router import (
     router as learning_paths_router,
     student_paths_router,
@@ -37,6 +41,8 @@ app.include_router(learning_paths_router, prefix="/api")
 app.include_router(student_paths_router, prefix="/api")
 app.include_router(attempts_router, prefix="/api")
 app.include_router(student_attempts_router, prefix="/api")
+app.include_router(gap_analysis_router, prefix="/api")
+app.include_router(student_gap_analyses_router, prefix="/api")
 
 _FRONTEND_DIR = Path("frontend/dist/public")
 

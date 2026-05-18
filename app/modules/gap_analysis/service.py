@@ -1,0 +1,327 @@
+import json
+import logging
+
+from fastapi import HTTPException, UploadFile, status
+from pydantic import ValidationError
+from sqlalchemy.orm import Session
+
+from app.modules.gap_analysis import extractors, repository
+from app.modules.gap_analysis.extractors import (
+    DocumentTooLargeError,
+    EmptyDocumentError,
+    UnsupportedDocumentError,
+)
+from app.modules.gap_analysis.models import GapAnalysis
+from app.modules.gap_analysis.schemas import (
+    GapAnalysisInputs,
+    GapAnalysisResponse,
+    GapAnalysisWithPlanResponse,
+)
+from app.modules.learning_paths import service as lp_service
+from app.modules.learning_paths.plan_generator.base import PlanGenerator
+from app.modules.learning_paths.repository.base import LearningPathRepository
+from app.modules.learning_paths.schemas import GapReport
+from app.shared.llm import GroqClient, LlmConfigurationError, LlmResponseError
+
+
+logger = logging.getLogger(__name__)
+
+
+_GAP_REPORT_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "student": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "skills": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "level": {"type": "integer"},
+                        },
+                        "required": ["name", "level"],
+                    },
+                },
+                "interests": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["name", "skills", "interests"],
+        },
+        "company": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+        "target_role": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "required_skills": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "level": {"type": "integer"},
+                            "priority": {
+                                "type": "string",
+                                "enum": ["HIGH", "MEDIUM", "LOW"],
+                            },
+                        },
+                        "required": ["name", "level", "priority"],
+                    },
+                },
+            },
+            "required": ["title", "required_skills"],
+        },
+        "summary": {"type": "string"},
+        "readiness_score": {"type": "integer"},
+        "skills": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "current_level": {"type": "integer"},
+                    "required_level": {"type": "integer"},
+                    "gap_level": {"type": "integer"},
+                    "priority": {
+                        "type": "string",
+                        "enum": ["HIGH", "MEDIUM", "LOW"],
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["READY", "NEEDS_WORK", "MISSING"],
+                    },
+                },
+                "required": [
+                    "name",
+                    "current_level",
+                    "required_level",
+                    "gap_level",
+                    "priority",
+                    "status",
+                ],
+            },
+        },
+    },
+    "required": [
+        "student",
+        "company",
+        "target_role",
+        "summary",
+        "readiness_score",
+        "skills",
+    ],
+}
+
+
+def create_gap_analysis(
+    db: Session,
+    student_email: str,
+    company_email: str,
+    student_doc: UploadFile,
+    position_doc: UploadFile,
+    plan_generator: PlanGenerator,
+    lp_repository: LearningPathRepository,
+) -> GapAnalysisWithPlanResponse:
+    inputs = _validate_inputs(student_email, company_email)
+    student_text = _extract_or_fail(student_doc, "student_doc")
+    position_text = _extract_or_fail(position_doc, "position_doc")
+
+    gap_report = _groq_extract_gap_report(
+        student_text=student_text,
+        position_text=position_text,
+        student_email=inputs.student_email,
+    )
+
+    learning_path = lp_service.create_learning_path(
+        plan_generator, lp_repository, gap_report, db
+    )
+
+    stored = repository.save(
+        db,
+        GapAnalysis(
+            student_email=inputs.student_email,
+            company_email=inputs.company_email,
+            readiness_score=gap_report.readiness_score,
+            summary=gap_report.summary,
+            gap_report_json=gap_report.model_dump_json(),
+            student_doc_text=student_text,
+            position_doc_text=position_text,
+            learning_path_id=learning_path.id,
+            generator_used="groq",
+        ),
+    )
+
+    return GapAnalysisWithPlanResponse(
+        gap_analysis=_to_response(stored, gap_report),
+        learning_path=learning_path,
+    )
+
+
+def get_gap_analysis(db: Session, gap_id: int) -> GapAnalysisResponse:
+    stored = repository.find_by_id(db, gap_id)
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Gap analysis no encontrado."
+        )
+    return _to_response(stored)
+
+
+def list_by_student(
+    db: Session, email: str, offset: int = 0, limit: int = 100
+) -> list[GapAnalysisResponse]:
+    return [
+        _to_response(item)
+        for item in repository.find_by_student(db, email, offset=offset, limit=limit)
+    ]
+
+
+def _validate_inputs(student_email: str, company_email: str) -> GapAnalysisInputs:
+    try:
+        return GapAnalysisInputs(
+            student_email=student_email, company_email=company_email
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from exc
+
+
+def _extract_or_fail(upload: UploadFile, field_name: str) -> str:
+    try:
+        return extractors.extract_text(upload)
+    except UnsupportedDocumentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{field_name}: {exc}",
+        ) from exc
+    except DocumentTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"{field_name}: {exc}",
+        ) from exc
+    except EmptyDocumentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{field_name}: {exc}",
+        ) from exc
+
+
+def _groq_extract_gap_report(
+    student_text: str, position_text: str, student_email: str
+) -> GapReport:
+    try:
+        client = GroqClient()
+    except LlmConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GROQ_API_KEY no configurada en el servidor.",
+        ) from exc
+
+    prompt = _build_extraction_prompt(student_text, position_text)
+    try:
+        raw = client.generate_json(prompt, _GAP_REPORT_SCHEMA, temperature=0.3)
+    except LlmResponseError as exc:
+        logger.exception("Groq fallo al extraer GapReport: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Groq no pudo extraer el GapReport: {exc}",
+        ) from exc
+
+    raw = _enrich_with_email(raw, student_email)
+
+    try:
+        return GapReport.model_validate(raw)
+    except ValidationError as exc:
+        logger.warning("Groq devolvio un GapReport invalido: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "message": "El JSON devuelto por Groq no cumple el schema de GapReport.",
+                "errors": exc.errors(),
+                "raw_response": raw,
+            },
+        ) from exc
+
+
+def _enrich_with_email(raw: dict, student_email: str) -> dict:
+    """Email del estudiante viene como form field, no se le pide al LLM."""
+    student = raw.get("student") or {}
+    student["email"] = student_email
+    if not student.get("name"):
+        student["name"] = student_email.split("@")[0]
+    raw["student"] = student
+    return raw
+
+
+def _build_extraction_prompt(student_text: str, position_text: str) -> str:
+    return f"""Sos un analista de RRHH en una plataforma argentina de capacitacion IT
+para jovenes de barrios vulnerables. Tu tarea es leer dos textos (datos crudos del
+estudiante y datos crudos de la oferta laboral) y producir un GapReport estructurado
+que despues un motor pedagogico va a usar para generar un plan de aprendizaje.
+
+INSTRUCCIONES DE ANALISIS:
+
+1. Inferi del texto del estudiante:
+   - Su nombre completo (si no aparece, dejalo vacio).
+   - Las skills que conoce, asignando un nivel del 0 al 5 segun cuanto las domina:
+     0 = no las conoce, 1 = basico, 2 = inicial operativo, 3 = junior, 4 = intermedio, 5 = avanzado.
+   - Sus intereses personales (videojuegos, deportes, musica, etc.).
+
+2. Inferi del texto de la oferta:
+   - Nombre de la empresa.
+   - Titulo del rol.
+   - Las skills requeridas con su nivel pedido (0-5) y su prioridad (HIGH | MEDIUM | LOW).
+     Si no se aclara la prioridad, usa HIGH para skills core, MEDIUM para nice-to-have, LOW para opcionales.
+
+3. Calcula para cada skill requerida del rol:
+   - current_level = nivel del estudiante en esa skill (0 si no la declaro).
+   - required_level = nivel pedido por la empresa.
+   - gap_level = required_level - current_level.
+   - status:
+       READY      si gap_level <= 0
+       NEEDS_WORK si gap_level == 1
+       MISSING    si gap_level >= 2
+
+4. readiness_score (0-100): promedio ponderado por prioridad (HIGH=3, MEDIUM=2, LOW=1)
+   de min(current_level, required_level) / required_level, multiplicado por 100 y redondeado.
+
+5. summary: una sola frase en espanol rioplatense que describa que le falta al estudiante
+   para acercarse al puesto, mencionando empresa y rol.
+
+TEXTO DEL ESTUDIANTE:
+\"\"\"
+{student_text}
+\"\"\"
+
+TEXTO DE LA OFERTA:
+\"\"\"
+{position_text}
+\"\"\"
+
+Devolve UNICAMENTE el JSON segun el schema indicado. Las claves van en ingles, los
+strings de contenido (name, summary, interests, etc.) van en espanol.
+"""
+
+
+def _to_response(
+    stored: GapAnalysis, gap_report: GapReport | None = None
+) -> GapAnalysisResponse:
+    if gap_report is None:
+        gap_report = GapReport.model_validate_json(stored.gap_report_json)
+    return GapAnalysisResponse(
+        id=stored.id,
+        student_email=stored.student_email,
+        company_email=stored.company_email,
+        readiness_score=stored.readiness_score,
+        summary=stored.summary,
+        gap_report=gap_report,
+        learning_path_id=stored.learning_path_id,
+        generator_used=stored.generator_used,
+        created_at=stored.created_at,
+    )
