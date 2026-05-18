@@ -7,12 +7,12 @@ class Settings(BaseSettings):
     app_env: str = "local"
     app_debug: bool = False
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/capacity_ar"
-
     plan_generator: str = "mock"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.0-flash"
     groq_api_key: str | None = None
     groq_model: str = "llama-3.3-70b-versatile"
+    api_target: str = "/api"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

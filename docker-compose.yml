@@ -6,6 +6,18 @@ services:
     volumes:
       - .:/app
     command: fastapi dev --app app --host 0.0.0.0
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - PORT=3000
+      - BASE_PATH=/
+      - API_TARGET=${API_TARGET}
+    command:  npm run dev
   db:
     image: postgres
     environment:
