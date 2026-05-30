@@ -12,6 +12,8 @@ import { ProgresoyLogros } from "@/pages/ProgresoyLogros";
 import { CanalTutor } from "@/pages/CanalTutor";
 import { PanelTutor } from "@/pages/PanelTutor";
 import { DetalleCandidato } from "@/pages/DetalleCandidato";
+import { NuevoPuesto } from "@/pages/NuevoPuesto";
+import { ListadoPuestos } from "@/pages/ListadoPuestos";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +29,8 @@ function Router() {
       <Route path="/panel-tutor" component={PanelTutor} />
       <Route path="/detalle-candidato" component={DetalleCandidato} />
       <Route path="/demo-api" component={DemoApi} />
+      <Route path="/companies/new-job" component={NuevoPuesto} />
+      <Route path="/companies/jobs" component={ListadoPuestos} />
       <Route component={NotFound} />
     </Switch>
   );

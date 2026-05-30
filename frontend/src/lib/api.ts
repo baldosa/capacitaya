@@ -114,6 +114,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const detail = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${detail}`);
   }
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -153,4 +156,70 @@ export const attempts = {
       `/students/${encodeURIComponent(email)}/attempts${qs ? `?${qs}` : ""}`,
     );
   },
+};
+
+// ─── Skills ──────────────────────────────────────────────────────────────────
+
+export interface Skill {
+  id: number;
+  name: string;
+}
+
+export const skills = {
+  search: (q: string) =>
+    request<Skill[]>(`/skills?q=${encodeURIComponent(q)}`),
+  create: (name: string) =>
+    request<Skill>("/skills", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+};
+
+// ─── Job Descriptions ─────────────────────────────────────────────────────────
+
+export type SkillLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "PRO";
+
+export interface SkillRequirement {
+  skill_id: number;
+  skill_name: string;
+  level: SkillLevel;
+}
+
+export interface PostedBy {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+export interface JobDescription {
+  id: number;
+  title: string;
+  description: string;
+  province: string;
+  posted_by: PostedBy;
+  required_skills: SkillRequirement[];
+  created_at: string;
+}
+
+export interface JobDescriptionCreate {
+  user_id: number;
+  title: string;
+  description: string;
+  province: string;
+  required_skills: { skill_id: number; level: SkillLevel }[];
+}
+
+export const jobDescriptions = {
+  list: (province?: string) =>
+    request<JobDescription[]>(
+      `/job-descriptions${province ? `?province=${encodeURIComponent(province)}` : ""}`,
+    ),
+  create: (data: JobDescriptionCreate) =>
+    request<JobDescription>("/job-descriptions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: number) =>
+    request<void>(`/job-descriptions/${id}`, { method: "DELETE" }),
 };

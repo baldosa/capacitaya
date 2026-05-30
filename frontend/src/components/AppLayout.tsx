@@ -1,16 +1,17 @@
 import React from "react";
 import { useLocation, Link } from "wouter";
-import { Bell, Home, BookOpen, GraduationCap, LineChart, MessageSquare, Users, AlertCircle, FileText } from "lucide-react";
+import { Bell, Home, BookOpen, GraduationCap, LineChart, MessageSquare, Users, AlertCircle, FileText, Briefcase, PlusCircle } from "lucide-react";
 
 interface AppLayoutProps {
   children: React.ReactNode;
   activePage: string;
-  userRole?: "candidato" | "tutor";
+  userRole?: "candidato" | "tutor" | "empresa";
   userName?: string;
 }
 
 export function AppLayout({ children, activePage, userRole = "candidato", userName = "Lucía Ramírez" }: AppLayoutProps) {
   const isCandidato = userRole === "candidato";
+  const isEmpresa = userRole === "empresa";
 
   const candidatoLinks = [
     { name: "Inicio", path: "/", icon: Home },
@@ -26,7 +27,12 @@ export function AppLayout({ children, activePage, userRole = "candidato", userNa
     { name: "Reportes", path: "/panel-tutor", icon: FileText },
   ];
 
-  const links = isCandidato ? candidatoLinks : tutorLinks;
+  const empresaLinks = [
+    { name: "Puestos", path: "/companies/jobs", icon: Briefcase },
+    { name: "Nuevo Puesto", path: "/companies/new-job", icon: PlusCircle },
+  ];
+
+  const links = isCandidato ? candidatoLinks : isEmpresa ? empresaLinks : tutorLinks;
 
   const initials = userName
     .split(" ")
@@ -50,11 +56,10 @@ export function AppLayout({ children, activePage, userRole = "candidato", userNa
               return (
                 <Link key={link.name} href={link.path}>
                   <div
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
-                      isActive
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${isActive
                         ? "bg-indigo-50 text-[#4F46E5]"
                         : "text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50"
-                    }`}
+                      }`}
                   >
                     <Icon className="w-5 h-5" />
                     {link.name}
